@@ -1,0 +1,1954 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { 
+  QrCode, 
+  BookOpen, 
+  Users, 
+  MessageCircle, 
+  LogOut, 
+  Menu, 
+  X, 
+  Plus, 
+  Trash2, 
+  Loader2,
+  Upload,
+  Edit,
+  Search,
+  Printer,
+  Download,
+  AlertCircle,
+  CheckCircle2,
+  Save,
+  TrendingUp,
+  ListMinus,
+  ArrowUpCircle,
+  ArrowDownCircle,
+  GraduationCap
+} from 'lucide-react';
+
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
+import { getDatabase, ref, onValue, push, set, remove, update, serverTimestamp, get } from 'firebase/database';
+
+// Menggunakan Konfigurasi Realtime Database milik Anda
+const firebaseConfig = {
+  apiKey: "AIzaSyDD6WeOuXfqefhqCOEAuRjvOTUZZtJrFO0",
+  authDomain: "absensekolah-2a8f1.firebaseapp.com",
+  databaseURL: "https://absensekolah-2a8f1-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "absensekolah-2a8f1",
+  storageBucket: "absensekolah-2a8f1.firebasestorage.app",
+  messagingSenderId: "1076311316432",
+  appId: "1:1076311316432:web:4e4f604833b8e8cdd24bd5"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getDatabase(app);
+
+// Daftar kelas baku (Fixed Classes) & Generasi Calon/Alumni
+const FIXED_CLASSES = [
+  '7A', '7B', '7C', '7D', '7E', '7F', 
+  '8A', '8B', '8C', '8D', '8E', '8F', 
+  '9A', '9B', '9C', '9D', '9E', '9F'
+];
+const CALON_CLASSES = FIXED_CLASSES.filter(c => c.startsWith('7')).map(c => `CALON ${c}`);
+const ALUMNI_CLASSES = FIXED_CLASSES.filter(c => c.startsWith('9')).map(c => `ALUMNI ${c}`);
+
+export default function App() {
+  const [user, setUser] = useState(null);
+  const [activeMenu, setActiveMenu] = useState('scanner');
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
+  // Otentikasi Anonim Otomatis
+  useEffect(() => {
+    const initAuth = async () => {
+      try {
+        await signInAnonymously(auth);
+      } catch (error) {
+        console.error("Gagal melakukan otentikasi:", error);
+      }
+    };
+    initAuth();
+
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  const menuItems = [
+    { id: 'scanner', label: 'Scanner Barcode', icon: QrCode },
+    { id: 'kelas', label: 'Manajemen Kelas', icon: BookOpen },
+    { id: 'siswa', label: 'Manajemen Siswa', icon: Users },
+    { id: 'whatsapp', label: 'WhatsApp Admin', icon: MessageCircle },
+  ];
+
+  const handleLogout = async () => {
+    try {
+      await auth.signOut();
+      setActiveMenu('logout');
+    } catch (error) {
+      console.error("Error saat logout:", error);
+    }
+  };
+
+  if (!user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <div className="flex flex-col items-center text-blue-800">
+          <Loader2 className="w-10 h-10 animate-spin mb-4" />
+          <p className="font-medium animate-pulse">Menghubungkan ke sistem...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-slate-50 flex font-sans">
+      {/* Sidebar Mobile Overlay */}
+      {isSidebarOpen && (
+        <div 
+          className="fixed inset-0 bg-black/50 z-20 md:hidden transition-opacity no-print"
+          onClick={() => setIsSidebarOpen(false)}
+        />
+      )}
+
+      {/* Sidebar */}
+      <aside 
+        className={`fixed md:static inset-y-0 left-0 z-30 w-72 bg-blue-900 text-white transform transition-transform duration-300 ease-in-out flex flex-col shadow-2xl no-print ${
+          isSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
+        }`}
+      >
+        {/* Header/Logo Sidebar */}
+        <div className="p-6 flex flex-col items-center text-center border-b border-blue-800/50">
+          <img 
+            src="https://raw.githubusercontent.com/smp2pajangan/gambar/refs/heads/main/logosmpn2pjg.png" 
+            alt="Logo SMPN 2 Pajangan" 
+            className="w-24 h-24 object-contain mb-4 drop-shadow-md bg-white rounded-full p-1"
+            onError={(e) => { e.target.src = "https://via.placeholder.com/100?text=Logo"; }}
+          />
+          <h1 className="text-lg font-bold tracking-wide leading-tight text-blue-50">
+            PRESENSI DIGITAL SISWA
+          </h1>
+          <p className="text-sm text-blue-300 mt-1 font-medium tracking-wider">
+            SMP NEGERI 2 PAJANGAN
+          </p>
+        </div>
+
+        {/* Menu Navigasi */}
+        <nav className="flex-1 py-6 px-4 space-y-2 overflow-y-auto">
+          {menuItems.map((item) => {
+            const Icon = item.icon;
+            const isActive = activeMenu === item.id;
+            return (
+              <button
+                key={item.id}
+                onClick={() => {
+                  setActiveMenu(item.id);
+                  setIsSidebarOpen(false);
+                }}
+                className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 group ${
+                  isActive 
+                    ? 'bg-blue-600 text-white shadow-md' 
+                    : 'text-blue-100 hover:bg-blue-800/50 hover:text-white'
+                }`}
+              >
+                <Icon className={`w-5 h-5 ${isActive ? 'text-white' : 'text-blue-300 group-hover:text-blue-100'}`} />
+                <span className="font-medium">{item.label}</span>
+              </button>
+            );
+          })}
+        </nav>
+
+        {/* Tombol Keluar */}
+        <div className="p-4 border-t border-blue-800/50">
+          <button
+            onClick={handleLogout}
+            className="w-full flex items-center space-x-3 px-4 py-3 text-red-300 hover:bg-red-500/10 hover:text-red-200 rounded-xl transition-colors duration-200"
+          >
+            <LogOut className="w-5 h-5" />
+            <span className="font-medium">Keluar</span>
+          </button>
+        </div>
+      </aside>
+
+      {/* Main Content Area */}
+      <main className="flex-1 flex flex-col w-full min-w-0 bg-slate-50 no-print">
+        {/* Top Header Mobile */}
+        <header className="md:hidden bg-white shadow-sm border-b border-slate-200 p-4 flex items-center justify-between z-10 no-print">
+          <div className="flex items-center space-x-3">
+            <img 
+              src="https://raw.githubusercontent.com/smp2pajangan/gambar/refs/heads/main/logosmpn2pjg.png" 
+              alt="Logo" 
+              className="w-8 h-8 object-contain"
+            />
+            <h2 className="font-bold text-blue-900 text-sm">PRESENSI SISWA</h2>
+          </div>
+          <button 
+            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+            className="p-2 text-slate-600 hover:bg-slate-100 rounded-lg"
+          >
+            {isSidebarOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+          </button>
+        </header>
+
+        {/* Dynamic Content */}
+        <div className="flex-1 p-6 md:p-10 overflow-auto no-print">
+          <div className="max-w-5xl mx-auto">
+            {/* Header Konten */}
+            <div className="mb-8">
+              <h2 className="text-3xl font-bold text-slate-800">
+                {menuItems.find(m => m.id === activeMenu)?.label || 'Aplikasi Presensi'}
+              </h2>
+              <p className="text-slate-500 mt-1">
+                Kelola data presensi dan siswa dengan mudah dan cepat.
+              </p>
+            </div>
+
+            {/* Views */}
+            {activeMenu === 'scanner' && <ScannerView />}
+            {activeMenu === 'kelas' && <KelasView db={db} user={user} />}
+            {activeMenu === 'siswa' && <SiswaView db={db} user={user} />}
+            {activeMenu === 'whatsapp' && <WhatsAppView />}
+            {activeMenu === 'logout' && (
+              <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-100 text-center">
+                <p className="text-slate-600 mb-4">Anda telah keluar dari sistem.</p>
+                <button 
+                  onClick={() => window.location.reload()}
+                  className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium"
+                >
+                  Masuk Kembali
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </main>
+    </div>
+  );
+}
+
+// ==========================================
+// VIEWS COMPONENTS
+// ==========================================
+
+function ScannerView() {
+  return (
+    <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-8 flex flex-col items-center justify-center min-h-[400px]">
+      <div className="w-64 h-64 border-4 border-dashed border-blue-200 rounded-3xl flex flex-col items-center justify-center bg-blue-50/50 mb-6 relative overflow-hidden group">
+        <QrCode className="w-20 h-20 text-blue-300 mb-3 group-hover:scale-110 transition-transform duration-300" />
+        <p className="text-blue-600 font-medium">Kamera Standby</p>
+        
+        {/* Animasi Scan Line */}
+        <div className="absolute top-0 left-0 w-full h-1 bg-blue-500 shadow-[0_0_10px_#3b82f6] animate-[scan_2s_ease-in-out_infinite]" />
+      </div>
+      <button className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-xl font-semibold shadow-lg shadow-blue-600/20 transition-all flex items-center space-x-2">
+        <QrCode className="w-5 h-5" />
+        <span>Mulai Scan Barcode</span>
+      </button>
+      <style>{`
+        @keyframes scan {
+          0%, 100% { transform: translateY(0); }
+          50% { transform: translateY(16rem); }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+function KelasView({ db, user }) {
+  const [kelas, setKelas] = useState([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  
+  // States untuk Inline Edit Kelas
+  const [editingRowId, setEditingRowId] = useState(null);
+  const [editRowData, setEditRowData] = useState(null);
+  
+  const [itemToReset, setItemToReset] = useState(null);
+
+  useEffect(() => {
+    if (!user) return;
+    const kelasRef = ref(db, 'kelas');
+    
+    // 1. Pengecekan & Pembuatan otomatis HANYA 1 KALI (Mencegah Loop 171 data)
+    get(kelasRef).then((snapshot) => {
+      const existingNames = [];
+      if (snapshot.exists()) {
+        snapshot.forEach(child => {
+          existingNames.push(child.val().nama);
+        });
+      }
+      
+      const missingClasses = FIXED_CLASSES.filter(fc => !existingNames.includes(fc));
+      if (missingClasses.length > 0) {
+        missingClasses.forEach(className => {
+          push(kelasRef, {
+            nama: className,
+            waliKelas: '',
+            idGrupWa: '',
+            createdAt: serverTimestamp()
+          });
+        });
+      }
+    });
+
+    // 2. Listener Realtime dengan Deduplikasi Cerdas
+    const unsubscribe = onValue(kelasRef, (snapshot) => {
+      const uniqueClassesMap = {}; // Untuk menampung agar tidak ada kelas dobel
+
+      snapshot.forEach((childSnapshot) => {
+        const val = childSnapshot.val();
+        if (FIXED_CLASSES.includes(val.nama)) {
+          // Jika kelas kembar ditemukan, pertahankan yang datanya sudah pernah diisi
+          const existing = uniqueClassesMap[val.nama];
+          if (!existing || (!existing.waliKelas && val.waliKelas)) {
+            uniqueClassesMap[val.nama] = { id: childSnapshot.key, ...val };
+          }
+        }
+      });
+
+      // Hanya tampilkan kelas yang terdaftar dan urutkan sesuai tingkatan
+      const filteredData = Object.values(uniqueClassesMap);
+      filteredData.sort((a, b) => FIXED_CLASSES.indexOf(a.nama) - FIXED_CLASSES.indexOf(b.nama));
+      setKelas(filteredData);
+    }, (error) => {
+      console.error("Error mengambil data kelas:", error);
+    });
+
+    return () => unsubscribe();
+  }, [user, db]);
+
+  // ==========================================
+  // FUNGSI INLINE EDIT KELAS (TABEL UTAMA)
+  // ==========================================
+
+  const startInlineEdit = (k) => {
+    setEditingRowId(k.id);
+    setEditRowData({
+      waliKelas: k.waliKelas || '',
+      idGrupWa: k.idGrupWa || ''
+    });
+  };
+
+  const cancelInlineEdit = () => {
+    setEditingRowId(null);
+    setEditRowData(null);
+  };
+
+  const saveInlineEditRecord = async (id) => {
+    try {
+      const updateRef = ref(db, `kelas/${id}`);
+      await update(updateRef, {
+        waliKelas: editRowData.waliKelas.trim(),
+        idGrupWa: editRowData.idGrupWa.trim()
+      });
+      setEditingRowId(null);
+      setEditRowData(null);
+    } catch (error) {
+      console.error("Error update kelas:", error);
+      alert("Terjadi kesalahan saat menyimpan data kelas.");
+    }
+  };
+
+  const handleResetKelas = (k) => {
+    setItemToReset(k);
+  };
+
+  const confirmReset = async () => {
+    if (!itemToReset) return;
+    try {
+      const updateRef = ref(db, `kelas/${itemToReset.id}`);
+      await update(updateRef, {
+        waliKelas: '',
+        idGrupWa: ''
+      });
+      setItemToReset(null);
+    } catch (error) {
+      console.error("Error mereset kelas:", error);
+    }
+  };
+
+  const filteredKelas = kelas.filter((k) => {
+    const term = searchTerm.toLowerCase();
+    return (
+      k.nama.toLowerCase().includes(term) ||
+      (k.waliKelas && k.waliKelas.toLowerCase().includes(term)) ||
+      (k.idGrupWa && k.idGrupWa.toLowerCase().includes(term))
+    );
+  });
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+        <h3 className="text-xl font-semibold text-slate-800 flex items-center">
+          <BookOpen className="w-6 h-6 mr-2 text-blue-600" /> Daftar Kelas
+        </h3>
+        <div className="flex flex-col sm:flex-row space-y-3 sm:space-y-0 sm:space-x-3 w-full lg:w-auto">
+          <div className="relative w-full sm:w-64">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Cari kelas..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-sm"
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse whitespace-nowrap">
+            <thead>
+              <tr className="bg-slate-50 border-b border-slate-200">
+                <th className="py-3 px-4 font-semibold text-sm text-slate-600 w-12 text-center">No</th>
+                <th className="py-3 px-4 font-semibold text-sm text-slate-600">Nama Kelas</th>
+                <th className="py-3 px-4 font-semibold text-sm text-slate-600">Wali Kelas</th>
+                <th className="py-3 px-4 font-semibold text-sm text-slate-600">ID Grup WA</th>
+                <th className="py-3 px-4 font-semibold text-sm text-slate-600 w-24 text-center">Aksi</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredKelas.length === 0 ? (
+                <tr>
+                  <td colSpan="5" className="py-8 text-center text-slate-500">
+                    Sedang memuat atau data tidak ditemukan.
+                  </td>
+                </tr>
+              ) : (
+                filteredKelas.map((k, index) => {
+                  const isEditing = editingRowId === k.id;
+                  
+                  return (
+                    <tr key={k.id} className={`border-b border-slate-100 transition-colors ${isEditing ? 'bg-blue-50/30' : 'hover:bg-slate-50'}`}>
+                      <td className="py-3 px-4 text-center text-slate-600">{index + 1}</td>
+                      <td className="py-3 px-4 font-bold text-blue-700">{k.nama}</td>
+                      
+                      {/* Kolom Wali Kelas */}
+                      <td className="py-3 px-4 text-slate-600">
+                        {isEditing ? (
+                          <input 
+                            type="text" 
+                            value={editRowData.waliKelas} 
+                            onChange={(e) => setEditRowData({...editRowData, waliKelas: e.target.value})}
+                            placeholder="Nama Wali Kelas"
+                            className="w-full min-w-[180px] px-2 py-1 border border-blue-300 rounded text-sm outline-none bg-white focus:ring-2 focus:ring-blue-500"
+                          />
+                        ) : (
+                          k.waliKelas ? <span className="font-medium">{k.waliKelas}</span> : <span className="text-slate-400 italic text-sm">Belum diatur</span>
+                        )}
+                      </td>
+                      
+                      {/* Kolom ID Grup WA */}
+                      <td className="py-3 px-4 text-slate-500 font-mono text-sm">
+                        {isEditing ? (
+                          <input 
+                            type="text" 
+                            value={editRowData.idGrupWa} 
+                            onChange={(e) => setEditRowData({...editRowData, idGrupWa: e.target.value})}
+                            placeholder="Contoh: 120363@g.us"
+                            className="w-full min-w-[150px] px-2 py-1 border border-blue-300 rounded text-sm outline-none bg-white focus:ring-2 focus:ring-blue-500"
+                          />
+                        ) : (
+                          k.idGrupWa ? k.idGrupWa : <span className="text-slate-400 italic">Kosong</span>
+                        )}
+                      </td>
+                      
+                      {/* Kolom Aksi */}
+                      <td className="py-3 px-4 text-center">
+                        {isEditing ? (
+                          <div className="flex space-x-1 justify-center">
+                            <button 
+                              onClick={() => saveInlineEditRecord(k.id)} 
+                              className="p-1.5 bg-blue-100 text-blue-600 hover:bg-blue-200 rounded transition-colors shadow-sm"
+                              title="Simpan Perubahan"
+                            >
+                              <Save className="w-4 h-4" />
+                            </button>
+                            <button 
+                              onClick={cancelInlineEdit} 
+                              className="p-1.5 bg-slate-200 text-slate-600 hover:bg-slate-300 rounded transition-colors shadow-sm"
+                              title="Batal Edit"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-center space-x-2">
+                            <button 
+                              onClick={() => startInlineEdit(k)}
+                              className="p-2 text-emerald-500 hover:bg-emerald-50 rounded-lg transition-colors"
+                              title="Isi/Edit Wali Kelas & Grup"
+                              disabled={editingRowId !== null}
+                            >
+                              <Edit className="w-4 h-4" />
+                            </button>
+                            <button 
+                              onClick={() => handleResetKelas(k)}
+                              className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                              title="Reset Data Wali & Grup"
+                              disabled={(!k.waliKelas && !k.idGrupWa) || editingRowId !== null}
+                              style={{ opacity: (!k.waliKelas && !k.idGrupWa) ? 0.3 : 1 }}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Modal Konfirmasi Reset Kelas */}
+      {itemToReset && (
+        <div className="fixed inset-0 bg-slate-900/50 z-[60] flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden animate-in fade-in zoom-in-95 duration-200 p-6 text-center">
+            <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Trash2 className="w-8 h-8 text-red-500" />
+            </div>
+            <h3 className="text-xl font-bold text-slate-800 mb-2">Reset Data Kelas?</h3>
+            <p className="text-slate-500 mb-6 text-sm">
+              Anda akan mengosongkan <strong>Wali Kelas</strong> dan <strong>ID Grup WhatsApp</strong> pada kelas <strong>{itemToReset.nama}</strong>. Data siswa di kelas ini tidak akan terhapus. Lanjutkan?
+            </p>
+            <div className="flex space-x-3">
+              <button 
+                onClick={() => setItemToReset(null)}
+                className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium py-2.5 rounded-xl transition-colors"
+              >
+                Batal
+              </button>
+              <button 
+                onClick={confirmReset}
+                className="flex-1 bg-red-500 hover:bg-red-600 text-white font-medium py-2.5 rounded-xl transition-colors"
+              >
+                Reset Data
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SiswaView({ db, user }) {
+  const [siswa, setSiswa] = useState([]);
+  const [kelasList, setKelasList] = useState([]);
+  const [allKelasMap, setAllKelasMap] = useState({});
+  const [searchTerm, setSearchTerm] = useState('');
+  const [formData, setFormData] = useState({
+    nis: '',
+    nama: '',
+    kelasId: ''
+  });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
+  const [itemToDelete, setItemToDelete] = useState(null);
+  const [errorMsg, setErrorMsg] = useState('');
+  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
+
+  // States untuk Inline Edit Data Siswa (Tabel Utama)
+  const [editingRowId, setEditingRowId] = useState(null);
+  const [editRowData, setEditRowData] = useState(null);
+
+  // States untuk fitur Import CSV
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [importData, setImportData] = useState([]);
+  const [isImporting, setIsImporting] = useState(false);
+  const [editingImportRowIndex, setEditingImportRowIndex] = useState(null);
+  const [editImportRowData, setEditImportRowData] = useState(null);
+  const fileInputRef = useRef(null);
+
+  // States untuk Naik Kelas / Turun Kelas & Hapus Masal
+  const [isPromoteModalOpen, setIsPromoteModalOpen] = useState(false);
+  const [isBatchDeleteModalOpen, setIsBatchDeleteModalOpen] = useState(false);
+  const [batchDeleteType, setBatchDeleteType] = useState('kelas'); 
+  const [batchDeleteTarget, setBatchDeleteTarget] = useState('');
+  const [globalConfirm, setGlobalConfirm] = useState(null); 
+
+  useEffect(() => {
+    if (!user) return;
+    
+    const kelasRef = ref(db, 'kelas');
+    const unsubKelas = onValue(kelasRef, (snapshot) => {
+      const uniqueClassesMap = {};
+      const fullMap = {};
+      
+      snapshot.forEach((childSnapshot) => {
+        const val = childSnapshot.val();
+        fullMap[childSnapshot.key] = val.nama;
+        
+        if (FIXED_CLASSES.includes(val.nama)) {
+          const existing = uniqueClassesMap[val.nama];
+          if (!existing || (!existing.waliKelas && val.waliKelas)) {
+            uniqueClassesMap[val.nama] = { id: childSnapshot.key, ...val };
+          }
+        }
+      });
+
+      const filteredData = Object.values(uniqueClassesMap);
+      filteredData.sort((a, b) => FIXED_CLASSES.indexOf(a.nama) - FIXED_CLASSES.indexOf(b.nama));
+      setKelasList(filteredData);
+      setAllKelasMap(fullMap);
+    });
+
+    const siswaRef = ref(db, 'siswa');
+    const unsubSiswa = onValue(siswaRef, (snapshot) => {
+      const data = [];
+      snapshot.forEach((childSnapshot) => {
+        data.push({ id: childSnapshot.key, ...childSnapshot.val() });
+      });
+      data.sort((a, b) => a.nama.localeCompare(b.nama));
+      setSiswa(data);
+    });
+
+    return () => {
+      unsubKelas();
+      unsubSiswa();
+    };
+  }, [user, db]);
+
+  const handleChange = (e) => {
+    setFormData({ ...formData, [e.target.name]: e.target.value });
+    setErrorMsg(''); 
+  };
+
+  const handleOpenAddModal = () => {
+    setErrorMsg('');
+    setFormData({ nis: '', nama: '', kelasId: formData.kelasId || '' });
+    setIsModalOpen(true);
+  };
+
+  const handleAddSubmit = async (e) => {
+    e.preventDefault();
+    if (!formData.nama.trim() || !formData.nis.trim() || !formData.kelasId) return;
+    
+    const newNis = formData.nis.trim();
+    const isDuplicate = siswa.some(s => s.nis === newNis);
+    
+    if (isDuplicate) {
+      setErrorMsg(`NIS "${newNis}" sudah terdaftar pada siswa lain.`);
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const siswaListRef = ref(db, 'siswa');
+      const newSiswaRef = push(siswaListRef);
+      await set(newSiswaRef, {
+        nis: newNis,
+        nama: formData.nama.trim().toUpperCase(),
+        kelasId: formData.kelasId,
+        barcode: newNis,
+        createdAt: serverTimestamp()
+      });
+      
+      setIsModalOpen(false);
+      setFormData({ nis: '', nama: '', kelasId: formData.kelasId });
+    } catch (error) {
+      console.error("Error menyimpan siswa:", error);
+      setErrorMsg("Terjadi kesalahan saat menyimpan data.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // ==========================================
+  // FUNGSI UMUM & HELPER
+  // ==========================================
+
+  const getNamaKelas = (kelasId) => {
+    if (kelasId.startsWith('ALUMNI') || kelasId.startsWith('CALON')) return kelasId;
+    return allKelasMap[kelasId] || 'Tidak diketahui';
+  };
+
+  const getNoAbsen = (studentId, kelasId) => {
+    const namaKelasSiswaIni = getNamaKelas(kelasId);
+    if (namaKelasSiswaIni === 'Tidak diketahui') return 0;
+    
+    const siswaSatuKelas = siswa.filter(s => getNamaKelas(s.kelasId) === namaKelasSiswaIni)
+                                .sort((a, b) => a.nama.localeCompare(b.nama));
+    
+    const index = siswaSatuKelas.findIndex(s => s.id === studentId);
+    return index + 1;
+  };
+
+  // ==========================================
+  // FUNGSI INLINE EDIT SISWA (TABEL UTAMA)
+  // ==========================================
+
+  const startInlineEdit = (s) => {
+    const namaKelasSiswa = getNamaKelas(s.kelasId);
+    let correctedKelasId = s.kelasId;
+    
+    if (!namaKelasSiswa.startsWith('ALUMNI') && !namaKelasSiswa.startsWith('CALON') && namaKelasSiswa !== 'Tidak diketahui') {
+      const validKelas = kelasList.find(k => k.nama === namaKelasSiswa);
+      if (validKelas) correctedKelasId = validKelas.id;
+    }
+
+    setEditingRowId(s.id);
+    setEditRowData({
+      nis: s.nis,
+      nama: s.nama,
+      kelasId: correctedKelasId
+    });
+  };
+
+  const cancelInlineEdit = () => {
+    setEditingRowId(null);
+    setEditRowData(null);
+  };
+
+  const saveInlineEditRecord = async (id) => {
+    const newNis = editRowData.nis.trim();
+    const newNama = editRowData.nama.trim().toUpperCase();
+    const newKelasId = editRowData.kelasId;
+
+    if (!newNis || !newNama || !newKelasId) {
+       alert("Data NIS, Nama, dan Kelas tidak boleh kosong!");
+       return;
+    }
+
+    const isDuplicate = siswa.some(s => s.nis === newNis && s.id !== id);
+    if (isDuplicate) {
+       alert(`Gagal! NIS "${newNis}" sudah dipakai oleh siswa lain.`);
+       return;
+    }
+
+    try {
+      const updateRef = ref(db, `siswa/${id}`);
+      await update(updateRef, {
+        nis: newNis,
+        nama: newNama,
+        kelasId: newKelasId,
+        barcode: newNis 
+      });
+      setEditingRowId(null);
+      setEditRowData(null);
+    } catch (error) {
+      console.error("Error update siswa:", error);
+      alert("Terjadi kesalahan saat mengupdate data.");
+    }
+  };
+
+  const handleHapusSiswa = (s) => {
+    setItemToDelete(s);
+  };
+
+  const confirmDelete = async () => {
+    if (!itemToDelete) return;
+    try {
+      const deleteRef = ref(db, `siswa/${itemToDelete.id}`);
+      await remove(deleteRef);
+      setItemToDelete(null);
+    } catch (error) {
+      console.error("Error menghapus siswa:", error);
+    }
+  };
+
+  // ==========================================
+  // FITUR: NAIK/TURUN KELAS MASSAL
+  // ==========================================
+
+  const executePromote = async () => {
+    setGlobalConfirm(null);
+    setIsSubmitting(true);
+    const updates = {};
+    const namaToIdMap = {};
+    kelasList.forEach(k => { namaToIdMap[k.nama] = k.id; });
+
+    siswa.forEach(s => {
+       const currentName = getNamaKelas(s.kelasId);
+       if (currentName === 'Tidak diketahui' || currentName.startsWith('ALUMNI')) return;
+       
+       let nextName = '';
+       let nextId = null;
+
+       if (currentName.startsWith('CALON 7')) {
+         nextName = '7' + currentName.substring(7); // CALON 7A -> 7A
+         nextId = namaToIdMap[nextName];
+       } else if (currentName.startsWith('7')) {
+         nextName = '8' + currentName.substring(1);
+         nextId = namaToIdMap[nextName];
+       } else if (currentName.startsWith('8')) {
+         nextName = '9' + currentName.substring(1);
+         nextId = namaToIdMap[nextName];
+       } else if (currentName.startsWith('9')) {
+         nextName = 'ALUMNI ' + currentName; // 9A -> ALUMNI 9A
+         nextId = nextName;
+       }
+
+       if (nextId) updates[`${s.id}/kelasId`] = nextId;
+    });
+
+    if (Object.keys(updates).length > 0) {
+       try { await update(ref(db, 'siswa'), updates); } 
+       catch(e) { console.error(e); alert("Terjadi kesalahan sistem."); }
+    } else {
+       alert("Tidak ada siswa yang perlu dinaikkan kelasnya saat ini.");
+    }
+    setIsSubmitting(false);
+    setIsPromoteModalOpen(false);
+  };
+
+  const executeDemote = async () => {
+    setGlobalConfirm(null);
+    setIsSubmitting(true);
+    const updates = {};
+    const namaToIdMap = {};
+    kelasList.forEach(k => { namaToIdMap[k.nama] = k.id; });
+
+    siswa.forEach(s => {
+       const currentName = getNamaKelas(s.kelasId);
+       if (currentName === 'Tidak diketahui' || currentName.startsWith('CALON')) return;
+       
+       let prevName = '';
+       let prevId = null;
+
+       if (currentName.startsWith('ALUMNI 9')) {
+         prevName = currentName.substring(7); // ALUMNI 9A -> 9A
+         prevId = namaToIdMap[prevName];
+       } else if (currentName.startsWith('9')) {
+         prevName = '8' + currentName.substring(1);
+         prevId = namaToIdMap[prevName];
+       } else if (currentName.startsWith('8')) {
+         prevName = '7' + currentName.substring(1);
+         prevId = namaToIdMap[prevName];
+       } else if (currentName.startsWith('7')) {
+         prevName = 'CALON ' + currentName; // 7A -> CALON 7A
+         prevId = prevName;
+       }
+
+       if (prevId) updates[`${s.id}/kelasId`] = prevId;
+    });
+
+    if (Object.keys(updates).length > 0) {
+       try { await update(ref(db, 'siswa'), updates); } 
+       catch(e) { console.error(e); alert("Terjadi kesalahan sistem."); }
+    } else {
+       alert("Tidak ada siswa yang bisa diturunkan kelasnya.");
+    }
+    setIsSubmitting(false);
+    setIsPromoteModalOpen(false);
+  };
+
+  const handleOpenPromoteConfirm = (isPromoting) => {
+    setGlobalConfirm({
+      title: isPromoting ? "Naikkan Kelas Semua Siswa?" : "Turunkan Kelas Semua Siswa?",
+      message: isPromoting 
+        ? "Siswa akan dinaikkan 1 tingkat (Contoh: CALON 7A ➔ 7A, 8A ➔ 9A, 9A ➔ ALUMNI 9A). Aksi ini sulit dibatalkan!"
+        : "Siswa akan diturunkan 1 tingkat (Contoh: ALUMNI 9A ➔ 9A, 8A ➔ 7A, 7A ➔ CALON 7A).",
+      type: isPromoting ? "primary" : "warning",
+      actionFn: isPromoting ? executePromote : executeDemote
+    });
+  };
+
+  // ==========================================
+  // FITUR: HAPUS MASAL (SEBAGIAN)
+  // ==========================================
+
+  const executeBatchDelete = async () => {
+    setGlobalConfirm(null);
+    setIsSubmitting(true);
+    const updates = {};
+    let targetSiswa = [];
+
+    if (batchDeleteType === 'kelas' && batchDeleteTarget) {
+      targetSiswa = siswa.filter(s => getNamaKelas(s.kelasId) === batchDeleteTarget);
+    } else if (batchDeleteType === 'angkatan' && batchDeleteTarget) {
+      targetSiswa = siswa.filter(s => getNamaKelas(s.kelasId).startsWith(batchDeleteTarget));
+    } else if (batchDeleteType === 'alumni') {
+      targetSiswa = siswa.filter(s => getNamaKelas(s.kelasId).startsWith('ALUMNI'));
+    } else if (batchDeleteType === 'calon') {
+      targetSiswa = siswa.filter(s => getNamaKelas(s.kelasId).startsWith('CALON'));
+    }
+
+    if (targetSiswa.length > 0) {
+      targetSiswa.forEach(s => { updates[s.id] = null; });
+      try { await update(ref(db, 'siswa'), updates); } 
+      catch(e) { console.error(e); alert("Gagal menghapus data."); }
+    }
+    
+    setIsSubmitting(false);
+    setIsBatchDeleteModalOpen(false);
+  };
+
+  const handleOpenBatchDeleteConfirm = () => {
+    if ((batchDeleteType === 'kelas' || batchDeleteType === 'angkatan') && !batchDeleteTarget) {
+      alert("Silakan pilih target kelas/angkatan terlebih dahulu."); return;
+    }
+    
+    let targetName = '';
+    if (batchDeleteType === 'kelas') targetName = `Kelas ${batchDeleteTarget}`;
+    if (batchDeleteType === 'angkatan') targetName = `Seluruh Angkatan Kelas ${batchDeleteTarget}`;
+    if (batchDeleteType === 'alumni') targetName = `Seluruh Data ALUMNI`;
+    if (batchDeleteType === 'calon') targetName = `Seluruh Data CALON SISWA`;
+
+    const count = batchDeleteType === 'alumni' 
+        ? siswa.filter(s => getNamaKelas(s.kelasId).startsWith('ALUMNI')).length
+        : batchDeleteType === 'calon'
+          ? siswa.filter(s => getNamaKelas(s.kelasId).startsWith('CALON')).length
+          : batchDeleteType === 'kelas' 
+            ? siswa.filter(s => getNamaKelas(s.kelasId) === batchDeleteTarget).length
+            : siswa.filter(s => getNamaKelas(s.kelasId).startsWith(batchDeleteTarget)).length;
+
+    if (count === 0) {
+      alert(`Tidak ada siswa di ${targetName} yang bisa dihapus.`); return;
+    }
+
+    setGlobalConfirm({
+      title: "Konfirmasi Hapus Sebagian",
+      message: `Anda akan menghapus permanen sebanyak ${count} siswa dari ${targetName}. Data yang dihapus tidak dapat dikembalikan!`,
+      type: "danger",
+      actionFn: executeBatchDelete
+    });
+  };
+
+  // ==========================================
+  // FUNGSI IMPORT CSV & VALIDASI
+  // ==========================================
+  
+  const handleDownloadTemplate = async () => {
+    try {
+      const response = await fetch('https://raw.githubusercontent.com/speropa/presensidigitalsekolah/refs/heads/main/Template_siswa.csv');
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'Template_Siswa.csv';
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error) {
+      console.error('Error downloading template:', error);
+      alert('Gagal mengunduh template. Pastikan koneksi internet stabil.');
+    }
+  };
+
+  const validateImportData = (dataArray) => {
+    const existingNisList = siswa.map(s => s.nis);
+    
+    return dataArray.map((row, index, self) => {
+      let error = null;
+      const nis = row.nis ? String(row.nis).trim() : '';
+      const nama = row.nama ? String(row.nama).trim().toUpperCase() : '';
+      const kelas = row.kelas ? String(row.kelas).trim().toUpperCase() : '';
+
+      const isValidClass = FIXED_CLASSES.includes(kelas) || CALON_CLASSES.includes(kelas) || ALUMNI_CLASSES.includes(kelas);
+
+      if (!nis || !nama || !kelas) {
+        error = "Data tidak lengkap";
+      } else if (!isValidClass) {
+        error = `Kelas "${kelas}" tidak valid`;
+      } else if (existingNisList.includes(nis)) {
+        error = `NIS sudah ada di database`;
+      } else if (self.findIndex(x => x.nis === nis) !== index) {
+        error = `NIS ganda di dalam file CSV ini`;
+      }
+
+      return { nis, nama, kelas, error, originalIndex: index };
+    });
+  };
+
+  const handleFileUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target.result;
+      const rows = text.split('\n').filter(row => row.trim() !== '');
+      const parsedData = [];
+      const separator = rows[0].includes(';') ? ';' : ',';
+
+      for (let i = 1; i < rows.length; i++) {
+        const cleanRow = rows[i].replace(/"/g, ''); 
+        const cols = cleanRow.split(separator);
+        
+        parsedData.push({
+          nis: cols[1] || '',
+          nama: cols[2] || '',
+          kelas: cols[3] || ''
+        });
+      }
+
+      const validatedData = validateImportData(parsedData);
+      setImportData(validatedData);
+      if(fileInputRef.current) fileInputRef.current.value = ''; 
+    };
+    reader.readAsText(file);
+  };
+
+  const saveInlineEditCSV = (index) => {
+    const newData = [...importData];
+    newData[index] = { ...editImportRowData, originalIndex: index };
+    const revalidatedData = validateImportData(newData);
+    setImportData(revalidatedData);
+    setEditingImportRowIndex(null);
+  };
+
+  const deleteImportRow = (index) => {
+    const newData = importData.filter((_, i) => i !== index);
+    const revalidatedData = validateImportData(newData);
+    setImportData(revalidatedData);
+  };
+
+  const processImportToFirebase = async () => {
+    const validRows = importData.filter(d => !d.error);
+    if (validRows.length === 0) return;
+
+    setIsImporting(true);
+    try {
+      const classMap = {};
+      kelasList.forEach(k => { classMap[k.nama] = k.id; });
+
+      const updates = {};
+      validRows.forEach(row => {
+        const newRef = push(ref(db, 'siswa'));
+        
+        // Cek jika kelasnya berbentuk string Calon/Alumni
+        const finalKelasId = (row.kelas.startsWith('ALUMNI') || row.kelas.startsWith('CALON')) 
+                              ? row.kelas 
+                              : classMap[row.kelas];
+
+        updates[`siswa/${newRef.key}`] = {
+          nis: row.nis,
+          nama: row.nama,
+          kelasId: finalKelasId,
+          barcode: row.nis,
+          createdAt: serverTimestamp()
+        };
+      });
+
+      await update(ref(db), updates);
+      setImportData([]);
+      setIsImportModalOpen(false);
+    } catch (error) {
+      console.error("Error import massal:", error);
+      alert("Terjadi kesalahan saat mengimpor data ke database.");
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  // ==========================================
+  // PENGURUTAN TABEL DAN PRINT
+  // ==========================================
+
+  const getSortWeight = (className) => {
+    if (className.startsWith('CALON')) return 1;
+    if (className.startsWith('7')) return 2;
+    if (className.startsWith('8')) return 3;
+    if (className.startsWith('9')) return 4;
+    if (className.startsWith('ALUMNI')) return 5;
+    return 6;
+  };
+
+  const filteredSiswa = siswa.filter((s) => {
+    const term = searchTerm.toLowerCase();
+    const namaKelas = getNamaKelas(s.kelasId).toLowerCase();
+    
+    return (
+      s.nama.toLowerCase().includes(term) ||
+      s.nis.toLowerCase().includes(term) ||
+      namaKelas.includes(term) ||
+      (s.barcode && s.barcode.toLowerCase().includes(term))
+    );
+  }).sort((a, b) => {
+    const kelasA = getNamaKelas(a.kelasId);
+    const kelasB = getNamaKelas(b.kelasId);
+    
+    const weightA = getSortWeight(kelasA);
+    const weightB = getSortWeight(kelasB);
+    
+    if (weightA !== weightB) return weightA - weightB;
+
+    // Jika dalam grup yang sama, urutkan abjad kelasnya lalu nama siswanya
+    const kelasCompare = kelasA.localeCompare(kelasB);
+    if (kelasCompare !== 0) return kelasCompare;
+    
+    return a.nama.localeCompare(b.nama);
+  });
+
+  const handleDownloadPDF = async () => {
+    setIsGeneratingPDF(true);
+    try {
+      if (!window.html2pdf) {
+        await new Promise((resolve, reject) => {
+          const script = document.createElement('script');
+          script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
+          script.onload = resolve;
+          script.onerror = reject;
+          document.head.appendChild(script);
+        });
+      }
+
+      const element = document.getElementById('print-area');
+      const pages = element.querySelectorAll('.print-page');
+      pages.forEach(p => { p.style.boxShadow = 'none'; p.style.margin = '0'; });
+
+      const opt = {
+        margin: 0,
+        filename: 'Kartu_Siswa_SMPN2_Pajangan.pdf',
+        image: { type: 'jpeg', quality: 1 },
+        html2canvas: { scale: 2, useCORS: true, logging: false },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+        pagebreak: { mode: ['css', 'legacy'] }
+      };
+
+      await window.html2pdf().set(opt).from(element).save();
+      pages.forEach(p => { p.style.boxShadow = ''; p.style.margin = ''; });
+    } catch (error) {
+      console.error("Gagal membuat PDF:", error);
+      alert("Terjadi kesalahan saat mengunduh PDF. Pastikan koneksi stabil.");
+    } finally {
+      setIsGeneratingPDF(false);
+    }
+  };
+
+  const chunkArray = (arr, size) => {
+    const chunked = [];
+    for (let i = 0; i < arr.length; i += size) {
+      chunked.push(arr.slice(i, i + size));
+    }
+    return chunked;
+  };
+  const printPages = chunkArray(filteredSiswa, 10);
+  const validImportCount = importData.filter(d => !d.error).length;
+
+  return (
+    <div className="space-y-6">
+      {/* Header Aksi */}
+      <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
+        <h3 className="text-xl font-semibold text-slate-800 flex items-center shrink-0">
+          <Users className="w-6 h-6 mr-2 text-blue-600" /> Daftar Siswa
+        </h3>
+        
+        <div className="flex flex-col sm:flex-row flex-wrap gap-2 w-full xl:w-auto">
+          {/* Kotak Pencarian */}
+          <div className="relative w-full sm:flex-1 min-w-[150px] mb-2 sm:mb-0">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Cari (Nama/NIS/Kelas)..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition-all text-sm"
+            />
+          </div>
+          
+          <button 
+            onClick={() => setIsPromoteModalOpen(true)} 
+            className="flex-1 sm:flex-none flex justify-center items-center space-x-1.5 bg-purple-600 hover:bg-purple-700 text-white px-3 py-2 rounded-lg font-medium transition-colors text-sm shadow-sm"
+          >
+            <TrendingUp className="w-4 h-4" />
+            <span className="hidden sm:inline">Naik/Turun Kelas</span>
+            <span className="sm:hidden">Naik/Turun</span>
+          </button>
+          
+          <button 
+            onClick={() => {
+               setBatchDeleteTarget('');
+               setIsBatchDeleteModalOpen(true);
+            }} 
+            className="flex-1 sm:flex-none flex justify-center items-center space-x-1.5 bg-rose-600 hover:bg-rose-700 text-white px-3 py-2 rounded-lg font-medium transition-colors text-sm shadow-sm"
+          >
+            <ListMinus className="w-4 h-4" />
+            <span className="hidden sm:inline">Hapus Sebagian</span>
+            <span className="sm:hidden">Hapus</span>
+          </button>
+
+          <button 
+            onClick={() => setIsPrintModalOpen(true)} 
+            disabled={filteredSiswa.length === 0}
+            className="flex-1 sm:flex-none flex justify-center items-center space-x-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white px-3 py-2 rounded-lg font-medium transition-colors text-sm shadow-sm"
+          >
+            <Printer className="w-4 h-4" />
+            <span className="hidden sm:inline">Cetak Kartu</span>
+            <span className="sm:hidden">Cetak</span>
+          </button>
+          
+          <button 
+            onClick={() => setIsImportModalOpen(true)}
+            className="flex-1 sm:flex-none flex justify-center items-center space-x-1.5 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 rounded-lg font-medium transition-colors text-sm shadow-sm"
+          >
+            <Upload className="w-4 h-4" />
+            <span className="hidden sm:inline">Import</span>
+          </button>
+          
+          <button 
+            onClick={handleOpenAddModal} 
+            className="flex-1 sm:flex-none flex justify-center items-center space-x-1.5 bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg font-medium transition-colors text-sm shadow-sm"
+          >
+            <Plus className="w-4 h-4" />
+            <span className="hidden sm:inline">Tambah</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Tabel Data Utama */}
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse whitespace-nowrap">
+            <thead>
+              <tr className="bg-slate-50 border-b border-slate-200">
+                <th className="py-3 px-4 font-semibold text-sm text-slate-600 w-12 text-center">No</th>
+                <th className="py-3 px-4 font-semibold text-sm text-slate-600">NIS</th>
+                <th className="py-3 px-4 font-semibold text-sm text-slate-600">Nama Siswa</th>
+                <th className="py-3 px-4 font-semibold text-sm text-slate-600">Kelas</th>
+                <th className="py-3 px-4 font-semibold text-sm text-slate-600">Barcode</th>
+                <th className="py-3 px-4 font-semibold text-sm text-slate-600 w-24 text-center">Aksi</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredSiswa.length === 0 ? (
+                <tr>
+                  <td colSpan="6" className="py-8 text-center text-slate-500">
+                    {searchTerm ? 'Data siswa tidak ditemukan.' : 'Belum ada data siswa. Silahkan tambahkan siswa baru atau Import CSV.'}
+                  </td>
+                </tr>
+              ) : (
+                filteredSiswa.map((s, index) => {
+                  const isEditing = editingRowId === s.id;
+                  const kelasStr = getNamaKelas(s.kelasId);
+
+                  return (
+                    <tr key={s.id} className={`border-b border-slate-100 transition-colors ${isEditing ? 'bg-blue-50/30' : 'hover:bg-slate-50'}`}>
+                      <td className="py-3 px-4 text-center text-slate-600">{index + 1}</td>
+                      
+                      {/* Kolom NIS */}
+                      <td className="py-3 px-4 text-slate-600">
+                        {isEditing ? (
+                          <input 
+                            type="text" 
+                            value={editRowData.nis} 
+                            onChange={(e) => setEditRowData({...editRowData, nis: e.target.value})}
+                            className="w-24 px-2 py-1 border border-blue-300 rounded text-sm outline-none bg-white"
+                          />
+                        ) : (
+                          s.nis
+                        )}
+                      </td>
+
+                      {/* Kolom Nama Siswa */}
+                      <td className="py-3 px-4">
+                        {isEditing ? (
+                          <input 
+                            type="text" 
+                            value={editRowData.nama} 
+                            onChange={(e) => setEditRowData({...editRowData, nama: e.target.value.toUpperCase()})}
+                            className="w-full min-w-[150px] px-2 py-1 border border-blue-300 rounded text-sm outline-none bg-white"
+                          />
+                        ) : (
+                          <span className={`font-medium ${kelasStr.startsWith('ALUMNI') ? 'text-slate-500' : 'text-slate-800'}`}>{s.nama}</span>
+                        )}
+                      </td>
+
+                      {/* Kolom Kelas (HANYA 18 KELAS + 1 Fallback Jika Error/Edit Data Lama) */}
+                      <td className="py-3 px-4 text-slate-600">
+                        {isEditing ? (
+                          <select 
+                            value={editRowData.kelasId}
+                            onChange={(e) => setEditRowData({...editRowData, kelasId: e.target.value})}
+                            className="w-32 px-2 py-1 border border-blue-300 rounded text-sm outline-none bg-white"
+                          >
+                            <option value="" disabled>Pilih</option>
+                            {/* Memunculkan option CALON/ALUMNI HANYA jika anak tsb memang sedang menjabat status itu agar tidak blank */}
+                            {(!kelasList.find(k => k.id === editRowData.kelasId) && editRowData.kelasId) && (
+                               <option value={editRowData.kelasId}>{getNamaKelas(editRowData.kelasId)}</option>
+                            )}
+                            {kelasList.map(k => <option key={k.id} value={k.id}>{k.nama}</option>)}
+                          </select>
+                        ) : (
+                          <span className={`px-2 py-1 rounded text-xs font-semibold ${
+                            kelasStr.startsWith('ALUMNI') ? 'bg-slate-200 text-slate-700' : 
+                            kelasStr.startsWith('CALON') ? 'bg-amber-100 text-amber-800' : 
+                            'bg-blue-100 text-blue-800'
+                          }`}>
+                            {kelasStr}
+                          </span>
+                        )}
+                      </td>
+
+                      {/* Kolom Barcode (Read-only view) */}
+                      <td className="py-3 px-4">
+                        {s.barcode ? (
+                          <img 
+                            src={`https://bwipjs-api.metafloor.com/?bcid=code128&text=${encodeURIComponent(s.barcode)}&scale=2&height=12`} 
+                            alt={`Barcode ${s.barcode}`} 
+                            className={`h-10 object-contain bg-white rounded border border-slate-200 ${isEditing || kelasStr.startsWith('ALUMNI') ? 'opacity-50' : 'p-1'}`}
+                          />
+                        ) : (
+                          <span className="text-slate-400 text-xs italic">-</span>
+                        )}
+                      </td>
+
+                      {/* Kolom Aksi */}
+                      <td className="py-3 px-4 text-center">
+                        {isEditing ? (
+                          <div className="flex space-x-1 justify-center">
+                            <button 
+                              onClick={() => saveInlineEditRecord(s.id)} 
+                              className="p-1.5 bg-blue-100 text-blue-600 hover:bg-blue-200 rounded transition-colors shadow-sm"
+                              title="Simpan Perubahan"
+                            >
+                              <Save className="w-4 h-4" />
+                            </button>
+                            <button 
+                              onClick={cancelInlineEdit} 
+                              className="p-1.5 bg-slate-200 text-slate-600 hover:bg-slate-300 rounded transition-colors shadow-sm"
+                              title="Batal Edit"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-center space-x-2">
+                            <button 
+                              onClick={() => startInlineEdit(s)}
+                              className="p-2 text-emerald-500 hover:bg-emerald-50 rounded-lg transition-colors"
+                              title="Edit Siswa (Inline)"
+                              disabled={editingRowId !== null}
+                            >
+                              <Edit className="w-4 h-4" />
+                            </button>
+                            <button 
+                              onClick={() => handleHapusSiswa(s)}
+                              className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                              title="Hapus Siswa"
+                              disabled={editingRowId !== null}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* MODAL: NAIK / TURUN KELAS MASSAL */}
+      {isPromoteModalOpen && !globalConfirm && (
+        <div className="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-200 p-6">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-4 mb-6">
+              <h3 className="text-xl font-bold text-slate-800 flex items-center">
+                <TrendingUp className="w-6 h-6 mr-2 text-purple-600" /> Kelola Angkatan
+              </h3>
+              <button onClick={() => setIsPromoteModalOpen(false)} className="text-slate-400 hover:bg-slate-100 p-1.5 rounded-lg">
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            
+            <p className="text-slate-600 mb-6 text-sm">
+              Sistem akan memindahkan seluruh siswa secara otomatis ke tingkat kelas di atas atau di bawahnya dengan menjaga urutan abjad kelas asal.
+            </p>
+
+            <div className="space-y-4">
+              <button 
+                onClick={() => handleOpenPromoteConfirm(true)}
+                className="w-full flex items-center justify-between bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 p-4 rounded-xl transition-all group"
+              >
+                <div className="flex items-center text-emerald-800">
+                  <ArrowUpCircle className="w-8 h-8 mr-4 text-emerald-600 group-hover:scale-110 transition-transform" />
+                  <div className="text-left">
+                    <div className="font-bold text-lg">Naikkan Angkatan</div>
+                    <div className="text-sm opacity-80 font-medium">Contoh: CALON 7A ➔ 7A ➔ 8A ➔ 9A ➔ ALUMNI 9A</div>
+                  </div>
+                </div>
+              </button>
+
+              <button 
+                onClick={() => handleOpenPromoteConfirm(false)}
+                className="w-full flex items-center justify-between bg-amber-50 hover:bg-amber-100 border border-amber-200 p-4 rounded-xl transition-all group"
+              >
+                <div className="flex items-center text-amber-800">
+                  <ArrowDownCircle className="w-8 h-8 mr-4 text-amber-600 group-hover:scale-110 transition-transform" />
+                  <div className="text-left">
+                    <div className="font-bold text-lg">Turunkan Angkatan</div>
+                    <div className="text-sm opacity-80 font-medium">Contoh: ALUMNI 9A ➔ 9A ➔ 8A ➔ 7A ➔ CALON 7A</div>
+                  </div>
+                </div>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: HAPUS MASAL (SEBAGIAN) */}
+      {isBatchDeleteModalOpen && !globalConfirm && (
+        <div className="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-200 p-6">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-4 mb-6">
+              <h3 className="text-xl font-bold text-slate-800 flex items-center">
+                <ListMinus className="w-6 h-6 mr-2 text-rose-600" /> Hapus Data Sebagian
+              </h3>
+              <button onClick={() => setIsBatchDeleteModalOpen(false)} className="text-slate-400 hover:bg-slate-100 p-1.5 rounded-lg">
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            
+            <div className="space-y-4">
+               {/* Option 1: Per Kelas */}
+               <label className={`flex flex-col p-3 border rounded-xl cursor-pointer transition-colors ${batchDeleteType === 'kelas' ? 'bg-rose-50 border-rose-300' : 'bg-white border-slate-200 hover:bg-slate-50'}`}>
+                  <div className="flex items-center">
+                     <input type="radio" name="batchType" value="kelas" checked={batchDeleteType === 'kelas'} onChange={() => {setBatchDeleteType('kelas'); setBatchDeleteTarget('');}} className="mr-3 w-4 h-4 text-rose-600 accent-rose-600" />
+                     <span className="font-bold text-slate-800 text-sm">Hapus Per Kelas</span>
+                  </div>
+                  {batchDeleteType === 'kelas' && (
+                     <div className="ml-7 mt-2">
+                        <select value={batchDeleteTarget} onChange={(e) => setBatchDeleteTarget(e.target.value)} className="w-full p-2 text-sm border border-rose-200 rounded outline-none focus:border-rose-400 bg-white">
+                           <option value="" disabled>-- Pilih Kelas --</option>
+                           {FIXED_CLASSES.map(fc => <option key={fc} value={fc}>{fc}</option>)}
+                        </select>
+                     </div>
+                  )}
+               </label>
+
+               {/* Option 2: Per Angkatan */}
+               <label className={`flex flex-col p-3 border rounded-xl cursor-pointer transition-colors ${batchDeleteType === 'angkatan' ? 'bg-rose-50 border-rose-300' : 'bg-white border-slate-200 hover:bg-slate-50'}`}>
+                  <div className="flex items-center">
+                     <input type="radio" name="batchType" value="angkatan" checked={batchDeleteType === 'angkatan'} onChange={() => {setBatchDeleteType('angkatan'); setBatchDeleteTarget('');}} className="mr-3 w-4 h-4 accent-rose-600" />
+                     <span className="font-bold text-slate-800 text-sm">Hapus Per Angkatan</span>
+                  </div>
+                  {batchDeleteType === 'angkatan' && (
+                     <div className="ml-7 mt-2">
+                        <select value={batchDeleteTarget} onChange={(e) => setBatchDeleteTarget(e.target.value)} className="w-full p-2 text-sm border border-rose-200 rounded outline-none focus:border-rose-400 bg-white">
+                           <option value="" disabled>-- Pilih Angkatan --</option>
+                           <option value="7">Seluruh Kelas 7</option>
+                           <option value="8">Seluruh Kelas 8</option>
+                           <option value="9">Seluruh Kelas 9</option>
+                        </select>
+                     </div>
+                  )}
+               </label>
+
+               <div className="grid grid-cols-2 gap-3">
+                 {/* Option 3: Calon Siswa */}
+                 <label className={`flex items-center p-3 border rounded-xl cursor-pointer transition-colors ${batchDeleteType === 'calon' ? 'bg-rose-50 border-rose-300' : 'bg-white border-slate-200 hover:bg-slate-50'}`}>
+                    <input type="radio" name="batchType" value="calon" checked={batchDeleteType === 'calon'} onChange={() => setBatchDeleteType('calon')} className="mr-3 w-4 h-4 accent-rose-600" />
+                    <div>
+                      <div className="font-bold text-slate-800 text-sm leading-tight">Hapus Semua CALON</div>
+                    </div>
+                 </label>
+
+                 {/* Option 4: Alumni */}
+                 <label className={`flex items-center p-3 border rounded-xl cursor-pointer transition-colors ${batchDeleteType === 'alumni' ? 'bg-rose-50 border-rose-300' : 'bg-white border-slate-200 hover:bg-slate-50'}`}>
+                    <input type="radio" name="batchType" value="alumni" checked={batchDeleteType === 'alumni'} onChange={() => setBatchDeleteType('alumni')} className="mr-3 w-4 h-4 accent-rose-600" />
+                    <div>
+                      <div className="font-bold text-slate-800 text-sm leading-tight">Hapus Semua ALUMNI</div>
+                    </div>
+                 </label>
+               </div>
+
+               <button 
+                  onClick={handleOpenBatchDeleteConfirm}
+                  disabled={isSubmitting}
+                  className="w-full bg-rose-600 hover:bg-rose-700 text-white font-bold py-3 rounded-xl mt-2 transition-colors shadow-md"
+               >
+                  Lanjutkan
+               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* GLOBAL CONFIRMATION MODAL (Untuk aksi-aksi berat) */}
+      {globalConfirm && (
+         <div className="fixed inset-0 bg-slate-900/80 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-90 p-6 text-center">
+               <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 ${globalConfirm.type === 'primary' ? 'bg-emerald-100' : globalConfirm.type === 'warning' ? 'bg-amber-100' : 'bg-rose-100'}`}>
+                  <AlertCircle className={`w-8 h-8 ${globalConfirm.type === 'primary' ? 'text-emerald-600' : globalConfirm.type === 'warning' ? 'text-amber-600' : 'text-rose-600'}`} />
+               </div>
+               <h3 className="text-xl font-bold text-slate-800 mb-2">{globalConfirm.title}</h3>
+               <p className="text-slate-600 mb-8 text-sm leading-relaxed">{globalConfirm.message}</p>
+               
+               <div className="flex space-x-3">
+                  <button 
+                     onClick={() => setGlobalConfirm(null)}
+                     disabled={isSubmitting}
+                     className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium py-2.5 rounded-xl transition-colors"
+                  >
+                     Batal
+                  </button>
+                  <button 
+                     onClick={globalConfirm.actionFn}
+                     disabled={isSubmitting}
+                     className={`flex-1 text-white font-medium py-2.5 rounded-xl transition-colors flex items-center justify-center shadow-md ${globalConfirm.type === 'primary' ? 'bg-emerald-600 hover:bg-emerald-700' : globalConfirm.type === 'warning' ? 'bg-amber-600 hover:bg-amber-700' : 'bg-rose-600 hover:bg-rose-700'}`}
+                  >
+                     {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : "Yakin & Proses"}
+                  </button>
+               </div>
+            </div>
+         </div>
+      )}
+
+      {/* MODAL IMPORT CSV (Unggah & Preview) */}
+      {isImportModalOpen && !globalConfirm && (
+        <div className="fixed inset-0 bg-slate-900/60 z-[70] flex items-center justify-center p-4 backdrop-blur-sm overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-4xl overflow-hidden flex flex-col my-auto max-h-[90vh] animate-in fade-in zoom-in-95 duration-200">
+            {/* Header Modal Import */}
+            <div className="flex justify-between items-center p-6 border-b border-slate-100 bg-slate-50/50 shrink-0">
+              <h3 className="text-lg font-semibold text-slate-800 flex items-center">
+                <Upload className="w-5 h-5 mr-2 text-emerald-600" /> 
+                {importData.length === 0 ? 'Import Data Siswa (CSV)' : 'Preview Data Import'}
+              </h3>
+              <button 
+                onClick={() => {
+                  setIsImportModalOpen(false);
+                  setImportData([]);
+                }} 
+                className="text-slate-400 hover:text-red-500 hover:bg-red-50 p-1.5 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Body Modal Import */}
+            <div className="p-6 overflow-y-auto bg-slate-50 flex-1">
+              {importData.length === 0 ? (
+                /* Mode 1: Belum ada data */
+                <div className="flex flex-col items-center justify-center py-12 text-center space-y-6">
+                  <div className="bg-emerald-100 w-20 h-20 rounded-full flex items-center justify-center mb-2">
+                    <Download className="w-10 h-10 text-emerald-600" />
+                  </div>
+                  <div>
+                    <h4 className="text-xl font-bold text-slate-800 mb-2">1. Unduh Template CSV</h4>
+                    <p className="text-slate-500 max-w-md mx-auto text-sm">
+                      Gunakan format baku kami agar sistem dapat membaca data dengan benar. Isi data dari baris kedua.
+                    </p>
+                    <button 
+                      onClick={handleDownloadTemplate}
+                      className="mt-4 bg-slate-800 hover:bg-slate-900 text-white px-6 py-2.5 rounded-xl font-medium transition-colors shadow-md"
+                    >
+                      Download Template.csv
+                    </button>
+                  </div>
+
+                  <div className="w-full max-w-md border-t border-slate-200 my-4"></div>
+
+                  <div>
+                    <h4 className="text-xl font-bold text-slate-800 mb-2">2. Unggah File CSV Anda</h4>
+                    <p className="text-slate-500 max-w-md mx-auto text-sm mb-4">
+                      Pilih file CSV yang sudah Anda isi sesuai template.
+                    </p>
+                    <label className="cursor-pointer bg-emerald-600 hover:bg-emerald-700 text-white px-8 py-3 rounded-xl font-semibold transition-colors shadow-lg shadow-emerald-600/20 flex items-center justify-center mx-auto w-max">
+                      <Upload className="w-5 h-5 mr-2" />
+                      Pilih File CSV
+                      <input 
+                        type="file" 
+                        accept=".csv" 
+                        className="hidden" 
+                        ref={fileInputRef}
+                        onChange={handleFileUpload} 
+                      />
+                    </label>
+                  </div>
+                </div>
+              ) : (
+                /* Mode 2: Tabel Preview Data CSV */
+                <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+                  <div className="bg-blue-50/50 p-4 border-b border-blue-100 flex items-center text-sm text-blue-800">
+                    <AlertCircle className="w-5 h-5 mr-2 shrink-0 text-blue-500" />
+                    <span>Ditemukan <strong>{importData.length} baris data</strong>. Terdapat {importData.length - validImportCount} baris yang bermasalah. Perbaiki atau hapus baris yang merah sebelum melakukan import.</span>
+                  </div>
+                  
+                  <div className="overflow-x-auto max-h-[50vh]">
+                    <table className="w-full text-left border-collapse whitespace-nowrap">
+                      <thead className="sticky top-0 z-10 bg-slate-100 border-b border-slate-200">
+                        <tr>
+                          <th className="py-3 px-4 font-semibold text-sm text-slate-600 w-12 text-center">No</th>
+                          <th className="py-3 px-4 font-semibold text-sm text-slate-600">NIS</th>
+                          <th className="py-3 px-4 font-semibold text-sm text-slate-600">Nama Lengkap</th>
+                          <th className="py-3 px-4 font-semibold text-sm text-slate-600">Kelas</th>
+                          <th className="py-3 px-4 font-semibold text-sm text-slate-600">Status</th>
+                          <th className="py-3 px-4 font-semibold text-sm text-slate-600 w-24 text-center">Aksi</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {importData.map((row, index) => {
+                          const isEditing = editingImportRowIndex === index;
+                          const hasError = row.error !== null;
+
+                          return (
+                            <tr key={index} className={`border-b border-slate-100 transition-colors ${hasError ? 'bg-red-50' : 'hover:bg-slate-50'}`}>
+                              <td className="py-2 px-4 text-center text-slate-500 text-sm">{index + 1}</td>
+                              
+                              <td className="py-2 px-4">
+                                {isEditing ? (
+                                  <input 
+                                    type="text" 
+                                    value={editImportRowData.nis} 
+                                    onChange={(e) => setEditImportRowData({...editImportRowData, nis: e.target.value})}
+                                    className="w-24 px-2 py-1 border border-blue-300 rounded text-sm outline-none"
+                                  />
+                                ) : (
+                                  <span className={`text-sm ${hasError && !row.nis ? 'text-red-500 font-bold' : 'text-slate-700'}`}>{row.nis || '-kosong-'}</span>
+                                )}
+                              </td>
+
+                              <td className="py-2 px-4">
+                                {isEditing ? (
+                                  <input 
+                                    type="text" 
+                                    value={editImportRowData.nama} 
+                                    onChange={(e) => setEditImportRowData({...editImportRowData, nama: e.target.value.toUpperCase()})}
+                                    className="w-full min-w-[150px] px-2 py-1 border border-blue-300 rounded text-sm outline-none"
+                                  />
+                                ) : (
+                                  <span className={`text-sm font-medium ${hasError && !row.nama ? 'text-red-500' : 'text-slate-800'}`}>{row.nama || '-kosong-'}</span>
+                                )}
+                              </td>
+
+                              <td className="py-2 px-4">
+                                {isEditing ? (
+                                  <select 
+                                    value={editImportRowData.kelas}
+                                    onChange={(e) => setEditImportRowData({...editImportRowData, kelas: e.target.value})}
+                                    className="w-24 px-2 py-1 border border-blue-300 rounded text-sm outline-none"
+                                  >
+                                    <option value="">Pilih</option>
+                                    {(!FIXED_CLASSES.includes(editImportRowData.kelas) && editImportRowData.kelas) && (
+                                       <option value={editImportRowData.kelas}>{editImportRowData.kelas}</option>
+                                    )}
+                                    {FIXED_CLASSES.map(fc => <option key={fc} value={fc}>{fc}</option>)}
+                                  </select>
+                                ) : (
+                                  <span className={`text-sm font-bold ${hasError && !FIXED_CLASSES.includes(row.kelas) && !row.kelas.startsWith('ALUMNI') && !row.kelas.startsWith('CALON') ? 'text-red-500' : 'text-blue-700'}`}>{row.kelas || '-kosong-'}</span>
+                                )}
+                              </td>
+
+                              <td className="py-2 px-4">
+                                {hasError ? (
+                                  <span className="inline-flex items-center text-xs font-semibold text-red-600 bg-red-100 px-2 py-1 rounded">
+                                    <AlertCircle className="w-3 h-3 mr-1" /> {row.error}
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center text-xs font-semibold text-emerald-600 bg-emerald-100 px-2 py-1 rounded">
+                                    <CheckCircle2 className="w-3 h-3 mr-1" /> Valid
+                                  </span>
+                                )}
+                              </td>
+
+                              <td className="py-2 px-4 text-center">
+                                {isEditing ? (
+                                  <div className="flex space-x-1 justify-center">
+                                    <button onClick={() => saveInlineEditCSV(index)} className="p-1.5 bg-blue-100 text-blue-600 hover:bg-blue-200 rounded">
+                                      <Save className="w-4 h-4" />
+                                    </button>
+                                    <button onClick={() => setEditingImportRowIndex(null)} className="p-1.5 bg-slate-200 text-slate-600 hover:bg-slate-300 rounded">
+                                      <X className="w-4 h-4" />
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <div className="flex space-x-1 justify-center">
+                                    <button 
+                                      onClick={() => {
+                                        setEditingImportRowIndex(index);
+                                        setEditImportRowData({ ...row });
+                                      }} 
+                                      className="p-1.5 text-blue-500 hover:bg-blue-50 rounded"
+                                    >
+                                      <Edit className="w-4 h-4" />
+                                    </button>
+                                    <button 
+                                      onClick={() => deleteImportRow(index)} 
+                                      className="p-1.5 text-red-500 hover:bg-red-50 rounded"
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </button>
+                                  </div>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Footer Modal Import */}
+            {importData.length > 0 && (
+              <div className="p-5 border-t border-slate-200 bg-white shrink-0 flex justify-between items-center">
+                <button 
+                  onClick={() => setImportData([])}
+                  className="text-slate-500 hover:text-slate-700 font-medium px-4 py-2 rounded-lg transition-colors hover:bg-slate-100"
+                >
+                  Batal / Unggah Ulang
+                </button>
+                <button 
+                  onClick={processImportToFirebase}
+                  disabled={validImportCount === 0 || isImporting || editingImportRowIndex !== null}
+                  className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white px-6 py-2.5 rounded-xl font-semibold transition-colors flex items-center shadow-md"
+                >
+                  {isImporting ? (
+                    <><Loader2 className="w-5 h-5 animate-spin mr-2" /> Menyimpan...</>
+                  ) : (
+                    `Import ${validImportCount} Data Valid`
+                  )}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* MODAL PRINT PREVIEW KARTU SISWA (A4) */}
+      {isPrintModalOpen && !globalConfirm && (
+        <div className="fixed inset-0 bg-slate-900/90 z-50 overflow-y-auto flex flex-col">
+          {/* Toolbar Header (Tidak dicetak) */}
+          <div className="sticky top-0 w-full bg-white/95 backdrop-blur-md shadow-sm p-4 flex justify-between items-center z-50 no-print">
+             <button 
+                onClick={handleDownloadPDF} 
+                disabled={isGeneratingPDF}
+                className="flex items-center space-x-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white px-5 py-2.5 rounded-xl font-semibold shadow-md transition-all"
+              >
+                {isGeneratingPDF ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    <span>Memproses...</span>
+                  </>
+                ) : (
+                  <>
+                    <Download className="w-5 h-5" />
+                    <span>Download PDF</span>
+                  </>
+                )}
+             </button>
+             <h2 className="text-slate-800 font-medium hidden sm:block">Preview Kartu ({filteredSiswa.length} Siswa)</h2>
+             <button 
+                onClick={() => setIsPrintModalOpen(false)} 
+                className="bg-slate-200 hover:bg-slate-300 text-slate-700 p-2.5 rounded-full transition-colors"
+             >
+                <X className="w-6 h-6" />
+             </button>
+          </div>
+
+          {/* Area Render Kertas A4 */}
+          <div id="print-area" className="w-full flex flex-col items-center py-8 space-y-8 bg-transparent">
+             <style>{`
+                @media print {
+                  body { background-color: white !important; margin: 0; padding: 0; }
+                  .no-print { display: none !important; }
+                  #print-area { padding: 0; margin: 0; }
+                  .print-page { 
+                    margin: 0 !important; 
+                    box-shadow: none !important; 
+                    page-break-after: always; 
+                  }
+                  @page { size: A4 portrait; margin: 0; }
+                }
+             `}</style>
+
+             {printPages.map((pageData, pageIndex) => (
+                <div 
+                  key={pageIndex} 
+                  className="print-page bg-white shadow-2xl relative box-border shrink-0"
+                  style={{ 
+                    width: '210mm', 
+                    minHeight: '297mm', 
+                    padding: '16mm 20mm 0 20mm'
+                  }}
+                >
+                   {/* Grid untuk 10 Kartu per halaman (2 Kolom) */}
+                   <div className="grid grid-cols-2 content-start" style={{ gap: '0.3mm' }}>
+                       {pageData.map((s) => (
+                          <div 
+                            key={s.id} 
+                            className="bg-white border border-slate-300 rounded-[4px] flex flex-col overflow-hidden box-border relative"
+                            style={{ width: '82.5mm', height: '52mm' }} 
+                          >
+                             {/* Header Kartu Nuansa Biru */}
+                             <div className="bg-[#1e3a8a] flex items-center px-2 py-1 h-[12mm] shrink-0">
+                                <img 
+                                  src="https://raw.githubusercontent.com/smp2pajangan/gambar/refs/heads/main/logosmpn2pjg.png" 
+                                  alt="Logo" 
+                                  crossOrigin="anonymous"
+                                  className="h-6 w-6 object-contain bg-white rounded-full p-[2px]"
+                                />
+                                <div className="ml-2.5 flex flex-col text-white justify-center">
+                                   <span className="font-bold text-[8pt] leading-tight tracking-wide">PRESENSI DIGITAL SISWA</span>
+                                   <span className="font-medium text-[5.5pt] leading-tight mt-[1px]">SMP NEGERI 2 PAJANGAN</span>
+                                </div>
+                             </div>
+                             
+                             {/* Judul Biodata */}
+                             <div className="text-center font-bold text-[8pt] text-slate-800 py-[2px] border-b border-slate-200 bg-slate-50 shrink-0">
+                                BIODATA DIRI SISWA
+                             </div>
+
+                             {/* Area Konten Utama */}
+                             <div className="flex-1 flex flex-row p-1.5 items-start pb-1">
+                                {/* Tempat Foto */}
+                                <div className="w-[20mm] h-[30mm] border-[1.5px] border-dashed border-slate-400 rounded flex items-center justify-center bg-slate-50 shrink-0">
+                                   <span className="text-[6pt] text-slate-400 text-center font-medium leading-tight">Foto<br/>2x3</span>
+                                </div>
+                                
+                                {/* Detail Data Siswa */}
+                                <div className="flex-1 px-2 flex flex-col justify-between h-[30mm]">
+                                   <div className="flex flex-col items-start">
+                                      <span className="text-[5.5pt] text-blue-800 bg-blue-100/80 px-1 rounded-[2px] font-semibold uppercase leading-none inline-block mb-[1px]">Nama Lengkap</span>
+                                      <div className="text-[8pt] font-bold text-slate-800 leading-tight line-clamp-2 px-[2px]">{s.nama}</div>
+                                   </div>
+                                   <div className="flex flex-col items-start">
+                                      <span className="text-[5.5pt] text-blue-800 bg-blue-100/80 px-1 rounded-[2px] font-semibold uppercase leading-none inline-block mb-[1px]">NIS</span>
+                                      <div className="text-[8pt] font-bold text-slate-800 leading-tight px-[2px]">{s.nis}</div>
+                                   </div>
+                                   <div className="flex flex-col items-start">
+                                      <span className="text-[5.5pt] text-blue-800 bg-blue-100/80 px-1 rounded-[2px] font-semibold uppercase leading-none inline-block mb-[1px]">Kelas</span>
+                                      <div className="text-[8pt] font-bold text-slate-800 leading-tight px-[2px]">{getNamaKelas(s.kelasId)}</div>
+                                   </div>
+                                   <div className="flex flex-col items-start">
+                                      <span className="text-[5.5pt] text-blue-800 bg-blue-100/80 px-1 rounded-[2px] font-semibold uppercase leading-none inline-block mb-[1px]">No. Absen</span>
+                                      <div className="text-[8pt] font-bold text-slate-800 leading-tight px-[2px]">{getNoAbsen(s.id, s.kelasId)}</div>
+                                   </div>
+                                </div>
+
+                                {/* Barcode Vertical Kanan */}
+                                <div className="w-[12mm] h-[30mm] flex items-center justify-center shrink-0 border-l border-slate-100 pl-[1.5mm]">
+                                   <img
+                                     src={`https://bwipjs-api.metafloor.com/?bcid=code128&text=${encodeURIComponent(s.barcode || s.nis)}&scale=3&rotate=L&paddingwidth=0&paddingheight=0`}
+                                     className="w-full h-full object-fill"
+                                     crossOrigin="anonymous"
+                                     alt="Barcode"
+                                   />
+                                </div>
+                             </div>
+
+                             {/* Dekorasi Garis Bawah */}
+                             <div className="h-[1.5mm] w-full bg-[#1e3a8a] shrink-0 mt-auto"></div>
+                          </div>
+                       ))}
+                   </div>
+                </div>
+             ))}
+          </div>
+        </div>
+      )}
+
+      {/* Modal Popup HANYA untuk Tambah Siswa Manual */}
+      {isModalOpen && !globalConfirm && (
+        <div className="fixed inset-0 bg-slate-900/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex justify-between items-center p-6 border-b border-slate-100 bg-slate-50/50">
+              <h3 className="text-lg font-semibold text-slate-800">
+                Tambah Siswa Baru
+              </h3>
+              <button 
+                onClick={() => setIsModalOpen(false)} 
+                className="text-slate-400 hover:text-slate-600 hover:bg-slate-200 p-1.5 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <form onSubmit={handleAddSubmit} className="p-6 space-y-4">
+              {errorMsg && (
+                <div className="bg-red-50 text-red-600 p-3 rounded-lg flex items-center space-x-2 text-sm border border-red-200">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{errorMsg}</span>
+                </div>
+              )}
+              <div>
+                <label className="block text-sm font-medium text-slate-600 mb-1">NIS <span className="text-red-500">*</span></label>
+                <input 
+                  type="text" 
+                  name="nis"
+                  value={formData.nis}
+                  onChange={handleChange}
+                  placeholder="Nomor Induk Siswa"
+                  className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-600 mb-1">Nama Lengkap <span className="text-red-500">*</span></label>
+                <input 
+                  type="text" 
+                  name="nama"
+                  value={formData.nama}
+                  onChange={handleChange}
+                  placeholder="Nama Lengkap Siswa"
+                  className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all uppercase"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-600 mb-1">Kelas <span className="text-red-500">*</span></label>
+                <select 
+                  name="kelasId"
+                  value={formData.kelasId}
+                  onChange={handleChange}
+                  className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all bg-white"
+                  required
+                >
+                  <option value="" disabled>-- Pilih Kelas --</option>
+                  {kelasList.map(k => (
+                    <option key={k.id} value={k.id}>{k.nama}</option>
+                  ))}
+                </select>
+              </div>
+              
+              {kelasList.length === 0 && (
+                <p className="text-xs text-red-500 text-center mt-2">Anda harus membuat kelas terlebih dahulu di Manajemen Kelas.</p>
+              )}
+
+              <div className="pt-4 flex space-x-3">
+                <button 
+                  type="button"
+                  onClick={() => setIsModalOpen(false)}
+                  className="flex-1 bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 font-medium py-2 px-4 rounded-lg transition-colors"
+                >
+                  Batal
+                </button>
+                <button 
+                  type="submit" 
+                  disabled={isSubmitting || kelasList.length === 0}
+                  className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-medium py-2 px-4 rounded-lg transition-colors"
+                >
+                  {isSubmitting ? 'Menyimpan...' : 'Simpan'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function WhatsAppView() {
+  return (
+    <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-8 text-center max-w-md mx-auto">
+      <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
+        <MessageCircle className="w-10 h-10 text-green-600" />
+      </div>
+      <h3 className="text-xl font-semibold text-slate-800 mb-2">Pusat Bantuan via WhatsApp</h3>
+      <p className="text-slate-500 mb-8">
+        Hubungi tim IT / Admin sekolah jika terdapat kendala dalam penggunaan sistem presensi atau pencetakan barcode.
+      </p>
+      <a 
+        href="#" 
+        className="inline-flex items-center space-x-2 bg-[#25D366] hover:bg-[#1ebd5a] text-white px-6 py-3 rounded-xl font-medium transition-colors w-full justify-center shadow-lg shadow-green-500/20"
+      >
+        <MessageCircle className="w-5 h-5" />
+        <span>Chat Admin Sekarang</span>
+      </a>
+    </div>
+  );
+}
