@@ -21,8 +21,7 @@ import {
   TrendingUp,
   ListMinus,
   ArrowUpCircle,
-  ArrowDownCircle,
-  GraduationCap
+  ArrowDownCircle
 } from 'lucide-react';
 
 import { initializeApp } from 'firebase/app';
@@ -58,6 +57,11 @@ export default function App() {
   const [activeMenu, setActiveMenu] = useState('scanner');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
+  // CACHE GLOBAL: Data disimpan di memori utama agar perpindahan menu instan
+  const [globalKelas, setGlobalKelas] = useState([]);
+  const [globalSiswa, setGlobalSiswa] = useState([]);
+  const [globalAllKelasMap, setGlobalAllKelasMap] = useState({});
+
   // Otentikasi Anonim Otomatis
   useEffect(() => {
     const initAuth = async () => {
@@ -75,6 +79,73 @@ export default function App() {
 
     return () => unsubscribe();
   }, []);
+
+  // GLOBAL DATA FETCHER: Hanya berjalan satu kali dan mengintai perubahan (Hemat Bandwidth)
+  useEffect(() => {
+    if (!user) return;
+    
+    const kelasRef = ref(db, 'kelas');
+    const siswaRef = ref(db, 'siswa');
+    
+    // 1. Inisialisasi Kelas Baku
+    get(kelasRef).then((snapshot) => {
+      const existingNames = [];
+      if (snapshot.exists()) {
+        snapshot.forEach(child => {
+          existingNames.push(child.val().nama);
+        });
+      }
+      const missingClasses = FIXED_CLASSES.filter(fc => !existingNames.includes(fc));
+      if (missingClasses.length > 0) {
+        missingClasses.forEach(className => {
+          push(kelasRef, {
+            nama: className,
+            waliKelas: '',
+            idGrupWa: '',
+            createdAt: serverTimestamp()
+          });
+        });
+      }
+    });
+
+    // 2. Realtime Listener Kelas
+    const unsubKelas = onValue(kelasRef, (snapshot) => {
+      const uniqueClassesMap = {};
+      const fullMap = {};
+      
+      snapshot.forEach((childSnapshot) => {
+        const val = childSnapshot.val();
+        fullMap[childSnapshot.key] = val.nama;
+        
+        if (FIXED_CLASSES.includes(val.nama)) {
+          const existing = uniqueClassesMap[val.nama];
+          if (!existing || (!existing.waliKelas && val.waliKelas)) {
+            uniqueClassesMap[val.nama] = { id: childSnapshot.key, ...val };
+          }
+        }
+      });
+
+      const filteredData = Object.values(uniqueClassesMap);
+      filteredData.sort((a, b) => FIXED_CLASSES.indexOf(a.nama) - FIXED_CLASSES.indexOf(b.nama));
+      setGlobalKelas(filteredData);
+      setGlobalAllKelasMap(fullMap);
+    });
+
+    // 3. Realtime Listener Siswa
+    const unsubSiswa = onValue(siswaRef, (snapshot) => {
+      const data = [];
+      snapshot.forEach((childSnapshot) => {
+        data.push({ id: childSnapshot.key, ...childSnapshot.val() });
+      });
+      data.sort((a, b) => a.nama.localeCompare(b.nama));
+      setGlobalSiswa(data);
+    });
+
+    return () => {
+      unsubKelas();
+      unsubSiswa();
+    };
+  }, [user, db]);
 
   const menuItems = [
     { id: 'scanner', label: 'Scanner Barcode', icon: QrCode },
@@ -205,10 +276,10 @@ export default function App() {
               </p>
             </div>
 
-            {/* Views */}
+            {/* Views - Passing Cached Data as Props */}
             {activeMenu === 'scanner' && <ScannerView />}
-            {activeMenu === 'kelas' && <KelasView db={db} user={user} />}
-            {activeMenu === 'siswa' && <SiswaView db={db} user={user} />}
+            {activeMenu === 'kelas' && <KelasView db={db} kelas={globalKelas} />}
+            {activeMenu === 'siswa' && <SiswaView db={db} siswa={globalSiswa} kelasList={globalKelas} allKelasMap={globalAllKelasMap} />}
             {activeMenu === 'whatsapp' && <WhatsAppView />}
             {activeMenu === 'logout' && (
               <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-100 text-center">
@@ -256,67 +327,13 @@ function ScannerView() {
   );
 }
 
-function KelasView({ db, user }) {
-  const [kelas, setKelas] = useState([]);
+function KelasView({ db, kelas }) {
   const [searchTerm, setSearchTerm] = useState('');
   
   // States untuk Inline Edit Kelas
   const [editingRowId, setEditingRowId] = useState(null);
   const [editRowData, setEditRowData] = useState(null);
-  
   const [itemToReset, setItemToReset] = useState(null);
-
-  useEffect(() => {
-    if (!user) return;
-    const kelasRef = ref(db, 'kelas');
-    
-    // 1. Pengecekan & Pembuatan otomatis HANYA 1 KALI (Mencegah Loop 171 data)
-    get(kelasRef).then((snapshot) => {
-      const existingNames = [];
-      if (snapshot.exists()) {
-        snapshot.forEach(child => {
-          existingNames.push(child.val().nama);
-        });
-      }
-      
-      const missingClasses = FIXED_CLASSES.filter(fc => !existingNames.includes(fc));
-      if (missingClasses.length > 0) {
-        missingClasses.forEach(className => {
-          push(kelasRef, {
-            nama: className,
-            waliKelas: '',
-            idGrupWa: '',
-            createdAt: serverTimestamp()
-          });
-        });
-      }
-    });
-
-    // 2. Listener Realtime dengan Deduplikasi Cerdas
-    const unsubscribe = onValue(kelasRef, (snapshot) => {
-      const uniqueClassesMap = {}; // Untuk menampung agar tidak ada kelas dobel
-
-      snapshot.forEach((childSnapshot) => {
-        const val = childSnapshot.val();
-        if (FIXED_CLASSES.includes(val.nama)) {
-          // Jika kelas kembar ditemukan, pertahankan yang datanya sudah pernah diisi
-          const existing = uniqueClassesMap[val.nama];
-          if (!existing || (!existing.waliKelas && val.waliKelas)) {
-            uniqueClassesMap[val.nama] = { id: childSnapshot.key, ...val };
-          }
-        }
-      });
-
-      // Hanya tampilkan kelas yang terdaftar dan urutkan sesuai tingkatan
-      const filteredData = Object.values(uniqueClassesMap);
-      filteredData.sort((a, b) => FIXED_CLASSES.indexOf(a.nama) - FIXED_CLASSES.indexOf(b.nama));
-      setKelas(filteredData);
-    }, (error) => {
-      console.error("Error mengambil data kelas:", error);
-    });
-
-    return () => unsubscribe();
-  }, [user, db]);
 
   // ==========================================
   // FUNGSI INLINE EDIT KELAS (TABEL UTAMA)
@@ -391,7 +408,7 @@ function KelasView({ db, user }) {
               placeholder="Cari kelas..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-sm"
+              className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition-all text-sm"
             />
           </div>
         </div>
@@ -537,10 +554,7 @@ function KelasView({ db, user }) {
   );
 }
 
-function SiswaView({ db, user }) {
-  const [siswa, setSiswa] = useState([]);
-  const [kelasList, setKelasList] = useState([]);
-  const [allKelasMap, setAllKelasMap] = useState({});
+function SiswaView({ db, siswa, kelasList, allKelasMap }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [formData, setFormData] = useState({
     nis: '',
@@ -572,48 +586,6 @@ function SiswaView({ db, user }) {
   const [batchDeleteType, setBatchDeleteType] = useState('kelas'); 
   const [batchDeleteTarget, setBatchDeleteTarget] = useState('');
   const [globalConfirm, setGlobalConfirm] = useState(null); 
-
-  useEffect(() => {
-    if (!user) return;
-    
-    const kelasRef = ref(db, 'kelas');
-    const unsubKelas = onValue(kelasRef, (snapshot) => {
-      const uniqueClassesMap = {};
-      const fullMap = {};
-      
-      snapshot.forEach((childSnapshot) => {
-        const val = childSnapshot.val();
-        fullMap[childSnapshot.key] = val.nama;
-        
-        if (FIXED_CLASSES.includes(val.nama)) {
-          const existing = uniqueClassesMap[val.nama];
-          if (!existing || (!existing.waliKelas && val.waliKelas)) {
-            uniqueClassesMap[val.nama] = { id: childSnapshot.key, ...val };
-          }
-        }
-      });
-
-      const filteredData = Object.values(uniqueClassesMap);
-      filteredData.sort((a, b) => FIXED_CLASSES.indexOf(a.nama) - FIXED_CLASSES.indexOf(b.nama));
-      setKelasList(filteredData);
-      setAllKelasMap(fullMap);
-    });
-
-    const siswaRef = ref(db, 'siswa');
-    const unsubSiswa = onValue(siswaRef, (snapshot) => {
-      const data = [];
-      snapshot.forEach((childSnapshot) => {
-        data.push({ id: childSnapshot.key, ...childSnapshot.val() });
-      });
-      data.sort((a, b) => a.nama.localeCompare(b.nama));
-      setSiswa(data);
-    });
-
-    return () => {
-      unsubKelas();
-      unsubSiswa();
-    };
-  }, [user, db]);
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -1071,7 +1043,6 @@ function SiswaView({ db, user }) {
     
     if (weightA !== weightB) return weightA - weightB;
 
-    // Jika dalam grup yang sama, urutkan abjad kelasnya lalu nama siswanya
     const kelasCompare = kelasA.localeCompare(kelasB);
     if (kelasCompare !== 0) return kelasCompare;
     
@@ -1278,12 +1249,13 @@ function SiswaView({ db, user }) {
                         )}
                       </td>
 
-                      {/* Kolom Barcode (Read-only view) */}
+                      {/* Kolom Barcode (MENGGUNAKAN LAZY LOADING DEMI HEMAT BANDWIDTH) */}
                       <td className="py-3 px-4">
                         {s.barcode ? (
                           <img 
                             src={`https://bwipjs-api.metafloor.com/?bcid=code128&text=${encodeURIComponent(s.barcode)}&scale=2&height=12`} 
                             alt={`Barcode ${s.barcode}`} 
+                            loading="lazy"
                             className={`h-10 object-contain bg-white rounded border border-slate-200 ${isEditing || kelasStr.startsWith('ALUMNI') ? 'opacity-50' : 'p-1'}`}
                           />
                         ) : (
